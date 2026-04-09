@@ -7,7 +7,7 @@ import asyncio
 from datetime import timedelta
 
 # ==================== НАСТРОЙКИ (ЗАПОЛНИТЕ ЭТО) ====================
-TOKEN = 'ТОКЕН_ВСТАВИТЬ_ПРИ_ЗАПУСКЕ'
+TOKEN = os.getenv('TOKEN')
 
 # ID КАНАЛОВ
 STATS_CHANNEL_ID = 1491763349786984459     # ID канала для статистики
