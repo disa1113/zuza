@@ -12,16 +12,16 @@ TOKEN = os.getenv('TOKEN')
 # ID КАНАЛОВ
 STATS_CHANNEL_ID = 1491763349786984459     # ID канала для статистики
 VOICE_CREATOR_ID = 1491773231835906139      # ID канала-создателя
-WELCOME_CHANNEL_ID = 1491490669435551784     # ID канала для приветствий
-PING_CHANNEL_ID = 1491763349786984459       # ID канала для уведомлений "бот жив"
+WELCOME_CHANNEL_ID = 1491490669435551784     # 👈 ID канала для приветствий
+PING_CHANNEL_ID = 1491763349786984459       # 👈 ID канала для уведомлений "бот жив"
 
 # ID РОЛИ (КОТОРАЯ БУДЕТ ВЫДАВАТЬСЯ НОВЫМ)
-DEFAULT_ROLE_ID = 1327427550762369075        # ID роли для новичков
+DEFAULT_ROLE_ID = 1327427550762369075        # 👈 ID роли для новичков
 
 SERVER_NAME = "Zuza"
 # ====================================================================
 
-# ==================== ВЕБ-СЕРВЕР ДЛЯ RENDER ====================
+# ==================== ВЕБ-СЕРВЕР ДЛЯ RENDER/RAILWAY ====================
 from flask import Flask
 from threading import Thread
 
@@ -30,6 +30,10 @@ web_app = Flask('')
 @web_app.route('/')
 def home():
     return "✅ Бот Zuza работает 24/7!"
+
+@web_app.route('/health')
+def health():
+    return "OK", 200
 
 def run_web():
     web_app.run(host='0.0.0.0', port=8080)
@@ -70,17 +74,13 @@ temp_channels = {}
 
 # ============ КНОПКИ УПРАВЛЕНИЯ КАНАЛОМ ============
 class VoiceChannelControlView(View):
-    def __init__(self, channel_id: int, owner_id: int, control_channel_id: int):
+    def __init__(self, channel_id: int, owner_id: int):
         super().__init__(timeout=None)
         self.channel_id = channel_id
         self.owner_id = owner_id
-        self.control_channel_id = control_channel_id
     
     async def get_channel(self):
         return bot.get_channel(self.channel_id)
-    
-    async def get_control_channel(self):
-        return bot.get_channel(self.control_channel_id)
     
     def is_owner_or_admin(self, interaction: discord.Interaction):
         return interaction.user.id == self.owner_id or interaction.user.guild_permissions.administrator
@@ -88,7 +88,7 @@ class VoiceChannelControlView(View):
     @discord.ui.button(label="➕ +1", style=discord.ButtonStyle.green, emoji="➕")
     async def increase_limit(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель канала!", ephemeral=True)
             return
         channel = await self.get_channel()
         if channel:
@@ -99,7 +99,7 @@ class VoiceChannelControlView(View):
     @discord.ui.button(label="➖ -1", style=discord.ButtonStyle.red, emoji="➖")
     async def decrease_limit(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель канала!", ephemeral=True)
             return
         channel = await self.get_channel()
         if channel:
@@ -116,7 +116,7 @@ class VoiceChannelControlView(View):
     @discord.ui.button(label="🔒 Закрыть", style=discord.ButtonStyle.secondary, emoji="🔒")
     async def lock_channel(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель!", ephemeral=True)
             return
         channel = await self.get_channel()
         if channel:
@@ -126,7 +126,7 @@ class VoiceChannelControlView(View):
     @discord.ui.button(label="🔓 Открыть", style=discord.ButtonStyle.secondary, emoji="🔓")
     async def unlock_channel(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель!", ephemeral=True)
             return
         channel = await self.get_channel()
         if channel:
@@ -136,53 +136,33 @@ class VoiceChannelControlView(View):
     @discord.ui.button(label="✏️ Название", style=discord.ButtonStyle.primary, emoji="✏️")
     async def rename_channel(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель!", ephemeral=True)
             return
-        await interaction.response.send_message("📝 Введи новое название (до 50 символов):", ephemeral=True)
+        await interaction.response.send_message("📝 Введи новое название:", ephemeral=True)
         def check(m):
             return m.author == interaction.user and m.channel == interaction.channel
         try:
             msg = await bot.wait_for('message', timeout=30.0, check=check)
             channel = await self.get_channel()
             if channel:
-                new_name = msg.content[:50]
-                await channel.edit(name=new_name)
-                await interaction.followup.send(f"✅ Название изменено на: {new_name}", ephemeral=True)
-                
-                # Обновляем embed в канале управления
-                control_channel = await self.get_control_channel()
-                if control_channel:
-                    embed = discord.Embed(
-                        title=f"🎮 Управление каналом: {new_name}",
-                        description="🔧 Настройки твоего голосового канала:",
-                        color=discord.Color.green()
-                    )
-                    embed.add_field(name="📊 Лимит", value=f"{channel.user_limit if channel.user_limit > 0 else '∞'}", inline=True)
-                    embed.add_field(name="🔒 Статус", value="Открыт", inline=True)
-                    await control_channel.send(embed=embed, view=self)
-                    # Удаляем старое сообщение
-                    await interaction.message.delete()
+                await channel.edit(name=msg.content[:50])
+                await interaction.followup.send(f"✅ Название: {msg.content[:50]}", ephemeral=True)
         except asyncio.TimeoutError:
             await interaction.followup.send("⏰ Время вышло", ephemeral=True)
     
     @discord.ui.button(label="❌ Удалить", style=discord.ButtonStyle.danger, emoji="❌")
     async def delete_channel(self, interaction: discord.Interaction, button: Button):
         if not self.is_owner_or_admin(interaction):
-            await interaction.response.send_message("❌ Это не твой канал!", ephemeral=True)
+            await interaction.response.send_message("❌ Только создатель!", ephemeral=True)
             return
         channel = await self.get_channel()
         if channel and len(channel.members) == 0:
-            await interaction.response.send_message("🗑️ Канал будет удалён через 5 секунд...", ephemeral=True)
-            await asyncio.sleep(5)
-            
-            # Удаляем текстовый канал управления
-            control_channel = await self.get_control_channel()
-            if control_channel:
-                await control_channel.delete()
-            
+            await interaction.response.send_message("🗑️ Удаляю...", ephemeral=True)
+            await asyncio.sleep(2)
             await channel.delete()
+            await interaction.message.delete()
         else:
-            await interaction.response.send_message("❌ Нельзя удалить непустой канал! Сначала выйдите из него.", ephemeral=True)
+            await interaction.response.send_message("❌ Канал не пуст!", ephemeral=True)
 
 # ==================== СОБЫТИЯ БОТА ====================
 
@@ -194,12 +174,14 @@ async def on_ready():
     print(f'👋 Приветствия: {WELCOME_CHANNEL_ID}')
     print(f'🟢 Пинг-канал: {PING_CHANNEL_ID}')
     
+    # Запускаем задачи
     hourly_report.start()
     keep_alive_ping.start()
 
-# ============ УВЕДОМЛЕНИЕ КАЖДЫЕ 5 МИНУТ ============
+# ============ УВЕДОМЛЕНИЕ КАЖДЫЕ 5 МИНУТ "БОТ ЖИВ" ============
 @tasks.loop(minutes=5)
 async def keep_alive_ping():
+    """Отправляет сообщение каждые 5 минут, чтобы ты знал что бот работает"""
     channel = bot.get_channel(PING_CHANNEL_ID)
     if channel:
         now = datetime.now().strftime('%H:%M:%S')
@@ -215,15 +197,18 @@ async def keep_alive_ping():
 
 @bot.event
 async def on_member_join(member):
+    """Новый участник"""
     current_hour = datetime.now().hour
     if stats.last_hour != current_hour:
         stats.reset_hourly()
     stats.add_join()
     
+    # Выдаём роль
     role = member.guild.get_role(DEFAULT_ROLE_ID)
     if role:
         await member.add_roles(role)
     
+    # Приветствие в канал
     welcome_channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if welcome_channel:
         embed = discord.Embed(
@@ -237,6 +222,7 @@ async def on_member_join(member):
 
 @bot.event
 async def on_member_remove(member):
+    """Участник вышел"""
     current_hour = datetime.now().hour
     if stats.last_hour != current_hour:
         stats.reset_hourly()
@@ -244,15 +230,14 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_voice_state_update(member, before, after):
+    """Голосовые каналы"""
     global temp_channels
     
-    # Если человек зашёл в канал-создатель
     if after.channel and after.channel.id == VOICE_CREATOR_ID:
         guild = member.guild
         category = after.channel.category
         channel_name = f'🎤 {member.name}\'s канал'
         
-        # Создаём голосовой канал
         new_channel = await guild.create_voice_channel(
             name=channel_name,
             category=category,
@@ -264,58 +249,40 @@ async def on_voice_state_update(member, before, after):
             mute_members=True, deafen_members=True, move_members=True
         )
         
-        # Создаём ПРИВАТНЫЙ текстовый канал для управления
-        control_text_channel = await guild.create_text_channel(
-            name=f"🔧-{member.name}",
-            category=category
-        )
-        
-        # Настраиваем права: только создатель видит канал
-        await control_text_channel.set_permissions(guild.default_role, view_channel=False)
-        await control_text_channel.set_permissions(member, view_channel=True, send_messages=True)
-        
-        # Запоминаем оба канала
         temp_channels[new_channel.id] = {
             'owner_id': member.id,
-            'channel_id': new_channel.id,
-            'control_channel_id': control_text_channel.id
+            'channel_id': new_channel.id
         }
         
         await member.move_to(new_channel)
         
-        # Отправляем панель управления в ПРИВАТНЫЙ канал
-        embed = discord.Embed(
-            title=f"🎮 Управление каналом: {channel_name}",
-            description="🔧 Вот твоя панель управления. Только ты её видишь!\n\n"
-                        f"**Доступные действия:**\n"
-                        f"• ➕ **+1** — увеличить лимит участников\n"
-                        f"• ➖ **-1** — уменьшить лимит участников\n"
-                        f"• 🔒 **Закрыть** — закрыть канал (только ты и админы)\n"
-                        f"• 🔓 **Открыть** — открыть канал для всех\n"
-                        f"• ✏️ **Название** — изменить название канала\n"
-                        f"• ❌ **Удалить** — удалить канал (только если пустой)",
-            color=discord.Color.green()
-        )
-        embed.add_field(name="📊 Текущий лимит", value="∞ (безлимит)", inline=True)
-        embed.add_field(name="🔒 Текущий статус", value="Открыт", inline=True)
-        embed.set_footer(text=f"Твой канал | {member.name}")
-        
-        view = VoiceChannelControlView(new_channel.id, member.id, control_text_channel.id)
-        await control_text_channel.send(embed=embed, view=view)
-        print(f"✅ Создан канал {channel_name} и приватная панель для {member.name}")
+        # Отправляем панель управления (временно в ЛС)
+        try:
+            embed = discord.Embed(
+                title=f"🎮 Управление каналом: {channel_name}",
+                description=f"Твой голосовой канал создан!\n\n"
+                            f"🔧 **Панель управления:**\n"
+                            f"• ➕ +1 — увеличить лимит\n"
+                            f"• ➖ -1 — уменьшить лимит\n"
+                            f"• 🔒 Закрыть — закрыть канал\n"
+                            f"• 🔓 Открыть — открыть канал\n"
+                            f"• ✏️ Название — изменить название\n"
+                            f"• ❌ Удалить — удалить канал",
+                color=discord.Color.green()
+            )
+            view = VoiceChannelControlView(new_channel.id, member.id)
+            await member.send(embed=embed, view=view)
+            print(f"💌 Панель управления отправлена в ЛС {member.name}")
+        except:
+            print(f"❌ Не удалось отправить ЛС {member.name} (закрыты сообщения)")
     
-    # Удаляем пустые голосовые каналы и связанные с ними текстовые
+    # Удаляем пустые каналы
     for channel_id, info in list(temp_channels.items()):
         channel = bot.get_channel(channel_id)
         if channel and len(channel.members) == 0:
-            # Удаляем текстовый канал управления
-            control_ch = bot.get_channel(info['control_channel_id'])
-            if control_ch:
-                await control_ch.delete()
-            # Удаляем голосовой канал
             await channel.delete()
             del temp_channels[channel_id]
-            print(f'🗑️ Удалены пустые каналы (голосовой и управление)')
+            print(f'🗑️ Удалён пустой канал {channel.name}')
 
 # ============ ЧАСОВАЯ СТАТИСТИКА ============
 @tasks.loop(hours=1)
@@ -370,5 +337,5 @@ async def stats_now(ctx):
 
 # ==================== ЗАПУСК ====================
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive()  # Запускаем веб-сервер
     bot.run(TOKEN)
